@@ -1,0 +1,41 @@
+name: JRE Mention Miner
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-and-extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_lg
+
+      - name: Run transcript + parser for configured IDs
+        run: |
+          mkdir -p public/episodes
+          while read -r id; do
+            if [ -n "$id" ]; then
+              echo "Processing $id"
+              python scripts/fetch_transcript.py "$id" || true
+              python scripts/parse_mentions.py "$id" || true
+            fi
+          done < config/video_ids.txt
+
+      - name: Commit updated episodes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update parsed episodes"
+          file_pattern: public/episodes/*.json

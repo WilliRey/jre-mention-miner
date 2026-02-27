@@ -1,0 +1,18 @@
+{
+  "episode_id": "DKUCkIkB4Zw",
+  "products": [
+    {
+      "t": 120,
+      "name": "Nicotine product",
+      "context": "... I switched to these nicotine pouches instead of smoking ...",
+      "tags": ["nicotine", "age/regulatory"]
+    }
+  ],
+  "media": [
+    {
+      "t": 360,
+      "cue": "Jamie, pull that up",
+      "type": "video"
+    }
+  ]
+}
