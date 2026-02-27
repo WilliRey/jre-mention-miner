@@ -1,9 +1,5 @@
 youtube-transcript-api
-<<<<<<< HEAD
 spacy==3.7.2
 en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.2/en_core_web_lg-3.7.2-py3-none-any.whl
 tqdm
 requests
-=======
-spacy
->>>>>>> b0f646f (Initial JRE Mention Miner setup)
