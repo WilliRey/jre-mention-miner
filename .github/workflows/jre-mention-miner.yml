@@ -27,11 +27,22 @@ jobs:
         run: |
           mkdir -p public/episodes
           while read -r id; do
-            if [ -n "$id" ]; then
-              echo "Processing $id"
-              python scripts/fetch_transcript.py "$id" || true
-              python scripts/parse_mentions.py "$id" || true
+            id="${id%%#*}"   # strip comments
+            id="$(echo "$id" | xargs)"  # trim whitespace
+            if [ -z "$id" ]; then
+              continue
             fi
+
+            echo "=== Processing $id ==="
+            python scripts/fetch_transcript.py "$id"
+            status=$?
+
+            if [ $status -ne 0 ]; then
+              echo "[WARN] Skipping parse for $id because transcript fetch failed (exit $status)" >&2
+              continue
+            fi
+
+            python scripts/parse_mentions.py "$id" || echo "[WARN] Parsing failed for $id" >&2
           done < config/video_ids.txt
 
       - name: Commit updated episodes
