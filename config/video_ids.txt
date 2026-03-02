@@ -1,1 +1,5 @@
-DKUCkIkB4Zw
+# Seed JRE episodes
+DKUCkIkB4Zw   # test episode already wired into UI
+4lmiRzROTZg   # Joe Rogan Experience #2458 – Matt McCusker
+y2SD_z61FRo   # Joe Rogan Experience #2453 – Evan Hafer
+qFwiXyZHYbU   # Joe Rogan Experience #2454 – Robert Malone, MD
