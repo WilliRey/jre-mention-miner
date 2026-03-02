@@ -24,7 +24,9 @@ jobs:
           python -m spacy download en_core_web_lg
 
       - name: Run transcript + parser for configured IDs
+        shell: bash
         run: |
+          set -eo pipefail
           mkdir -p public/episodes
           while read -r id; do
             id="${id%%#*}"   # strip comments
@@ -34,8 +36,12 @@ jobs:
             fi
 
             echo "=== Processing $id ==="
+
+            # Allow fetch_transcript to fail without killing the whole step
+            set +e
             python scripts/fetch_transcript.py "$id"
             status=$?
+            set -e
 
             if [ $status -ne 0 ]; then
               echo "[WARN] Skipping parse for $id because transcript fetch failed (exit $status)" >&2

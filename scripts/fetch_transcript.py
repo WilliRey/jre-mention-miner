@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
+import youtube_transcript_api as yta
 from youtube_transcript_api import (
     YouTubeTranscriptApi,
     TranscriptsDisabled,
@@ -14,6 +15,39 @@ from youtube_transcript_api import (
 
 
 EPISODES_DIR = Path(__file__).resolve().parents[1] / "public" / "episodes"
+
+
+def _safe_get_transcript(video_id: str, languages: List[str] | None = None):
+    """Call get_transcript in a way that works across library versions."""
+    langs = languages or ["en"]
+
+    # Preferred: classmethod (historical API)
+    if hasattr(YouTubeTranscriptApi, "get_transcript"):
+        return YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
+
+    # Some versions may expose a module-level function
+    if hasattr(yta, "get_transcript"):
+        return yta.get_transcript(video_id, languages=langs)
+
+    # Fallback: instance method
+    try:
+        inst = YouTubeTranscriptApi()
+        if hasattr(inst, "get_transcript"):
+            return inst.get_transcript(video_id, languages=langs)
+    except TypeError:
+        # Constructor might not be callable in some versions
+        pass
+
+    raise RuntimeError("youtube_transcript_api.get_transcript API not found")
+
+
+def _safe_list_transcripts(video_id: str):
+    """Call list_transcripts in a version-tolerant way."""
+    if hasattr(YouTubeTranscriptApi, "list_transcripts"):
+        return YouTubeTranscriptApi.list_transcripts(video_id)
+    if hasattr(yta, "list_transcripts"):
+        return yta.list_transcripts(video_id)
+    raise RuntimeError("youtube_transcript_api.list_transcripts API not found")
 
 
 def choose_english_transcript(transcripts) -> Any:
@@ -28,9 +62,9 @@ def choose_english_transcript(transcripts) -> Any:
     auto_en = None
 
     for t in transcripts:
-        lang = (t.language_code or "").lower()
+        lang = (getattr(t, "language_code", "") or "").lower()
         is_en = lang == "en" or lang.startswith("en-")
-        if is_en and not t.is_generated:
+        if is_en and not getattr(t, "is_generated", False):
             manual_en = t
             break
         if is_en and auto_en is None:
@@ -43,14 +77,12 @@ def fetch_transcript_once(video_id: str) -> List[Dict[str, Any]]:
     """Fetch a transcript once, without retry logic."""
     try:
         # Try direct English transcript first
-        return YouTubeTranscriptApi.get_transcript(video_id, languages=["en"])
+        return _safe_get_transcript(video_id, languages=["en"])
     except (TranscriptsDisabled, NoTranscriptFound):
         # Fall back to listing transcripts and picking best match
         try:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        except TranscriptsDisabled:
-            raise
-        except NoTranscriptFound:
+            transcript_list = _safe_list_transcripts(video_id)
+        except (TranscriptsDisabled, NoTranscriptFound):
             raise
         except Exception as e:  # noqa: BLE001
             raise CouldNotRetrieveTranscript(str(e)) from e
