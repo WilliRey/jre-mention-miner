@@ -7,6 +7,7 @@ interface Product {
   name: string;
   context: string;
   tags: string[];
+  confidence?: number; // 0-1 heuristic from parser
 }
 
 interface MediaCue {
@@ -47,7 +48,11 @@ function buildAffiliateNotes(ep: ParsedEpisode): string {
   for (const p of ep.products) {
     const t = formatTime(p.t);
     const tags = p.tags.length ? ` [${p.tags.join(", ")}]` : "";
-    lines.push(`- (${t}) ${p.name}${tags} — ${p.context}`);
+    const conf =
+      typeof p.confidence === "number"
+        ? ` (confidence ${Math.round(p.confidence * 100)}%)`
+        : "";
+    lines.push(`- (${t}) ${p.name}${tags}${conf} — ${p.context}`);
   }
   if (ep.media.length) {
     lines.push("\nMedia cues:");
@@ -77,7 +82,18 @@ export default function EpisodePage({ params }: { params: { id: string } }) {
     );
   }
 
-  const affiliateNotes = buildAffiliateNotes(episode);
+  // Sort products by confidence desc, then time, for display
+  const productsSorted = [...episode.products].sort((a, b) => {
+    const ca = typeof a.confidence === "number" ? a.confidence : 0;
+    const cb = typeof b.confidence === "number" ? b.confidence : 0;
+    if (cb !== ca) return cb - ca;
+    return a.t - b.t;
+  });
+
+  const affiliateNotes = buildAffiliateNotes({
+    ...episode,
+    products: productsSorted,
+  });
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -100,8 +116,13 @@ export default function EpisodePage({ params }: { params: { id: string } }) {
         </header>
 
         <section className="mb-8">
-          <h2 className="text-lg font-semibold">Products</h2>
-          {episode.products.length === 0 ? (
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">Products</h2>
+            <p className="text-[11px] text-slate-400">
+              Sorted by confidence (highest first).
+            </p>
+          </div>
+          {productsSorted.length === 0 ? (
             <p className="mt-2 text-sm text-slate-400">No products detected.</p>
           ) : (
             <div className="mt-2 overflow-x-auto rounded-md border border-slate-800 bg-slate-900/40">
@@ -112,10 +133,11 @@ export default function EpisodePage({ params }: { params: { id: string } }) {
                     <th className="px-3 py-2">Product</th>
                     <th className="px-3 py-2">Context</th>
                     <th className="px-3 py-2">Tags</th>
+                    <th className="px-3 py-2">Conf.</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {episode.products.map((p, idx) => (
+                  {productsSorted.map((p, idx) => (
                     <tr
                       key={`${p.name}-${p.t}-${idx}`}
                       className="border-t border-slate-800 hover:bg-slate-900/80"
@@ -138,6 +160,11 @@ export default function EpisodePage({ params }: { params: { id: string } }) {
                             {tag}
                           </span>
                         ))}
+                      </td>
+                      <td className="px-3 py-2 text-[11px] text-slate-300">
+                        {typeof p.confidence === "number"
+                          ? `${Math.round(p.confidence * 100)}%`
+                          : ""}
                       </td>
                     </tr>
                   ))}

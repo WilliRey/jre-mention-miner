@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import json
+import math
 import re
 import sys
+from collections import defaultdict
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 import spacy
 
@@ -108,7 +110,7 @@ def is_ad_block(text: str) -> bool:
 
 def guess_categories(name: str, context: str) -> List[str]:
     text = f"{name} {context}".lower()
-    tags = []
+    tags: List[str] = []
     for cat, keywords in CATEGORY_KEYWORDS.items():
         if any(k in text for k in keywords):
             tags.append(cat)
@@ -120,6 +122,41 @@ def guess_categories(name: str, context: str) -> List[str]:
     return sorted(set(tags))
 
 
+def score_product(name: str, context: str, in_ad_block: bool) -> float:
+    """Heuristic confidence score (0–1).
+
+    Factors:
+    - Penalize mentions inside clear ad blocks.
+    - Boost if looks niche (not all caps, length > 3, etc.).
+    - Light boost if nicotine-related.
+    """
+    base = 0.7
+
+    # Ad blocks are more likely to be sponsor reads
+    if in_ad_block:
+        base -= 0.3
+
+    simple = name.strip()
+    if len(simple) <= 3:
+        base -= 0.1
+    if simple.isupper():
+        base -= 0.1
+
+    text = f"{name} {context}".lower()
+    if NICOTINE_PATTERN.search(text):
+        base += 0.15
+
+    # Clamp to [0, 1]
+    return max(0.0, min(1.0, base))
+
+
+def bucket_key(name: str, t: float) -> Tuple[str, int]:
+    """Key for deduping: normalize name, bucket timestamp by 30s window."""
+    norm = name.strip().lower()
+    bucket = int(math.floor(t / 30.0))  # 30-second buckets
+    return norm, bucket
+
+
 def process_episode(nlp, video_id: str):
     raw_path = EPISODES_DIR / f"{video_id}.json"
     if not raw_path.exists():
@@ -128,14 +165,15 @@ def process_episode(nlp, video_id: str):
     with raw_path.open("r", encoding="utf-8") as f:
         segments = json.load(f)
 
-    products: List[Dict[str, Any]] = []
+    # Collect raw hits first
+    raw_products: List[Dict[str, Any]] = []
     media: List[Dict[str, Any]] = []
 
     skip_until_idx = -1
 
     for idx, seg in enumerate(segments):
         text = seg.get("text", "")
-        start = seg.get("start", 0)
+        start = float(seg.get("start", 0))
 
         if not text:
             continue
@@ -143,6 +181,8 @@ def process_episode(nlp, video_id: str):
         # Detect ad block start
         if is_ad_block(text):
             skip_until_idx = max(skip_until_idx, idx + 15)  # skip next ~15 lines
+
+        in_ad_block = idx <= skip_until_idx
 
         # Media cues (always captured, even in ad reads)
         for pattern, mtype in MEDIA_PATTERNS:
@@ -162,34 +202,41 @@ def process_episode(nlp, video_id: str):
                 continue
 
             name = ent.text.strip()
-            # Normalize simple capitalization
             if name.lower() in (b.lower() for b in SKIP_BRANDS):
                 # Always skip explicit SKIP brands
                 continue
 
-            # If we're in an ad block, be conservative and only keep non-SKIP brands
-            if idx <= skip_until_idx:
-                # Already filtered SKIP brands; proceed as niche product
-                pass
-
             context = text.strip()
             tags = guess_categories(name, context)
+            confidence = score_product(name, context, in_ad_block)
 
-            products.append({
+            raw_products.append({
                 "t": start,
                 "name": name,
                 "context": context,
                 "tags": tags,
+                "confidence": confidence,
             })
 
         # Nicotine mentions that might not be captured as entities
         if NICOTINE_PATTERN.search(text):
-            products.append({
+            raw_products.append({
                 "t": start,
                 "name": "Nicotine product",
                 "context": text.strip(),
                 "tags": ["nicotine", "age/regulatory"],
+                "confidence": 0.9,
             })
+
+    # Dedupe: bucket by normalized name + 30s window, keep highest-confidence hit
+    buckets: Dict[Tuple[str, int], Dict[str, Any]] = {}
+    for hit in raw_products:
+        key = bucket_key(hit["name"], hit["t"])
+        existing = buckets.get(key)
+        if existing is None or hit["confidence"] > existing["confidence"]:
+            buckets[key] = hit
+
+    products = sorted(buckets.values(), key=lambda h: h["t"])
 
     out = {
         "episode_id": video_id,
