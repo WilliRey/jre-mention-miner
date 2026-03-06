@@ -1,6 +1,9 @@
+"use client";
+
 import fs from "fs";
 import path from "path";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 
 interface Product {
   t: number;
@@ -69,6 +72,8 @@ function buildAffiliateNotes(ep: ParsedEpisode): string {
 export default function EpisodePage({ params }: { params: { id: string } }) {
   const episode = loadEpisode(params.id);
 
+  const [minConfidence, setMinConfidence] = useState<number>(0.7);
+
   if (!episode) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -82,13 +87,21 @@ export default function EpisodePage({ params }: { params: { id: string } }) {
     );
   }
 
-  // Sort products by confidence desc, then time, for display
-  const productsSorted = [...episode.products].sort((a, b) => {
-    const ca = typeof a.confidence === "number" ? a.confidence : 0;
-    const cb = typeof b.confidence === "number" ? b.confidence : 0;
-    if (cb !== ca) return cb - ca;
-    return a.t - b.t;
-  });
+  const productsFiltered = useMemo(() => {
+    return episode.products.filter((p) => {
+      const c = typeof p.confidence === "number" ? p.confidence : 0;
+      return c >= minConfidence;
+    });
+  }, [episode.products, minConfidence]);
+
+  const productsSorted = useMemo(() => {
+    return [...productsFiltered].sort((a, b) => {
+      const ca = typeof a.confidence === "number" ? a.confidence : 0;
+      const cb = typeof b.confidence === "number" ? b.confidence : 0;
+      if (cb !== ca) return cb - ca;
+      return a.t - b.t;
+    });
+  }, [productsFiltered]);
 
   const affiliateNotes = buildAffiliateNotes({
     ...episode,
@@ -116,14 +129,31 @@ export default function EpisodePage({ params }: { params: { id: string } }) {
         </header>
 
         <section className="mb-8">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold">Products</h2>
-            <p className="text-[11px] text-slate-400">
-              Sorted by confidence (highest first).
-            </p>
+          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Products</h2>
+              <p className="text-[11px] text-slate-400">
+                Sorted by confidence (highest first).
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+              <span>Min confidence:</span>
+              <select
+                value={minConfidence}
+                onChange={(e) => setMinConfidence(Number(e.target.value))}
+                className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-100"
+              >
+                <option value={0}>All</option>
+                <option value={0.5}>50%+</option>
+                <option value={0.7}>70%+</option>
+                <option value={0.85}>85%+</option>
+              </select>
+            </div>
           </div>
           {productsSorted.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-400">No products detected.</p>
+            <p className="mt-2 text-sm text-slate-400">
+              No products at this confidence threshold.
+            </p>
           ) : (
             <div className="mt-2 overflow-x-auto rounded-md border border-slate-800 bg-slate-900/40">
               <table className="min-w-full text-left text-xs">
